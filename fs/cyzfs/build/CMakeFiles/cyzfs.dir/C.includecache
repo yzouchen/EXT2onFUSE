@@ -1,0 +1,46 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/cyz/user-land-filesystem/fs/cyzfs/include/cyzfs.h
+stdio.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/stdio.h
+stdlib.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/stdlib.h
+unistd.h
+-
+fcntl.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/fcntl.h
+string.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/string.h
+fuse.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/fuse.h
+stddef.h
+-
+ddriver.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/ddriver.h
+errno.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/errno.h
+types.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/types.h
+
+/home/cyz/user-land-filesystem/fs/cyzfs/include/ddriver.h
+ddriver_ctl_user.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/ddriver_ctl_user.h
+stdio.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/stdio.h
+
+/home/cyz/user-land-filesystem/fs/cyzfs/include/ddriver_ctl_user.h
+sys/ioctl.h
+-
+
+/home/cyz/user-land-filesystem/fs/cyzfs/include/types.h
+
+/home/cyz/user-land-filesystem/fs/cyzfs/src/cyzfs.c
+../include/cyzfs.h
+/home/cyz/user-land-filesystem/fs/cyzfs/include/cyzfs.h
+

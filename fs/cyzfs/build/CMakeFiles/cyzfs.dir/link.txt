@@ -1,0 +1,1 @@
+/usr/bin/x86_64-linux-gnu-gcc-7  -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g  -rdynamic CMakeFiles/cyzfs.dir/src/cyzfs.c.o  -o cyzfs -lfuse /home/cyz/lib/libddriver.a 

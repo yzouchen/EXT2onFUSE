@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/cyz/user-land-filesystem/fs/cyzfs/build",
+  "command": "/usr/bin/x86_64-linux-gnu-gcc-7  -I/home/cyz/user-land-filesystem/fs/cyzfs/./include   -D_FILE_OFFSET_BITS=64 -no-pie -g -Wall --pedantic -g   -o CMakeFiles/cyzfs.dir/src/cyzfs.c.o   -c /home/cyz/user-land-filesystem/fs/cyzfs/src/cyzfs.c",
+  "file": "/home/cyz/user-land-filesystem/fs/cyzfs/src/cyzfs.c"
+}
+]

@@ -1,0 +1,3 @@
+/home/cyz/user-land-filesystem/fs/cyzfs/build/CMakeFiles/rebuild_cache.dir
+/home/cyz/user-land-filesystem/fs/cyzfs/build/CMakeFiles/cyzfs.dir
+/home/cyz/user-land-filesystem/fs/cyzfs/build/CMakeFiles/edit_cache.dir
