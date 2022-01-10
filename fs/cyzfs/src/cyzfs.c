@@ -42,14 +42,14 @@ static struct fuse_operations operations = {
 * SECTION: Assemble Function for disk operation for cyzfs	reference to sfs_utils.c
 *******************************************************************************/
 
-int assemble_read(int offset, uint8_t *buf, int size) {
+int assemble_read(int offset, char *buf, int size) {
 	//从offset开始，读size个字节，存入buf
 	//实现集成的辅助512字节对齐
     int      offset_aligned = BLK_ROUND_DOWN(offset, IO_SIZE);
     int      bias           = offset - offset_aligned;
     int      size_aligned   = BLK_ROUND_UP((size + bias), IO_SIZE);
-    uint8_t* temp_content   = (uint8_t*)malloc(size_aligned);
-    uint8_t* cur            = temp_content;
+    char* temp_content   = (char*)malloc(size_aligned);
+    char* cur            = temp_content;
 
     ddriver_seek(super.fd, offset_aligned, SEEK_SET);
     while (size_aligned != 0)
@@ -63,14 +63,14 @@ int assemble_read(int offset, uint8_t *buf, int size) {
     return 0;
 }
 
-int assemble_write(int offset, uint8_t *buf, int size) {
+int assemble_write(int offset, char *buf, int size) {
 	//将buf的size字节写入offset开始的磁盘块中
 	//因为原始写需要512整个写，故需要提前将非对齐部分读入内存并整合写入
     int      offset_aligned = BLK_ROUND_DOWN(offset, IO_SIZE);
     int      bias           = offset - offset_aligned;
     int      size_aligned   = BLK_ROUND_UP((size + bias), IO_SIZE);
-    uint8_t* temp_content   = (uint8_t*)malloc(size_aligned);
-    uint8_t* cur            = temp_content;
+    char* temp_content   = (char*)malloc(size_aligned);
+    char* cur            = temp_content;
     assemble_read(offset_aligned, temp_content, size_aligned);	//补齐非对齐部分
     memcpy(temp_content + bias, buf, size);
     
@@ -83,6 +83,7 @@ int assemble_write(int offset, uint8_t *buf, int size) {
     }
 
     free(temp_content);
+	printf("----write successful\n");
     return 0;
 }
 
@@ -90,7 +91,8 @@ struct cyzfs_dentry* assemble_new_dentry(char * fname, CYZFS_FILE_TYPE ftype){
 	//在内存中新建一个dentry
 	struct cyzfs_dentry* new_dentry = (struct cyzfs_dentry*)malloc(sizeof(struct cyzfs_dentry));
 	memset(new_dentry, 0, sizeof(struct cyzfs_dentry));
-	memcpy(new_dentry->name, fname, MAX_NAME_LEN);
+	// memcpy(new_dentry->name, fname, MAX_NAME_LEN);
+	memcpy(new_dentry->name, fname, strlen(fname));
 	new_dentry->ftype = ftype;
 	new_dentry->ino = -1;
 	new_dentry->inode = NULL;
@@ -101,6 +103,7 @@ struct cyzfs_dentry* assemble_new_dentry(char * fname, CYZFS_FILE_TYPE ftype){
 
 struct cyzfs_inode* assemble_alloc_inode(struct cyzfs_dentry* dentry){
 	// 新分配一个inode，分配的inode需要在inode位图中对应为0，注意inode未同步至磁盘
+	super.bitmap_inode_ptr[0] |= (1 << ROOT_INODE_NUM);
 	int free_ino = -1;
 	int inode_num,byte,bit;
 	for(inode_num = 0; inode_num < MAX_INODE; inode_num++){
@@ -115,7 +118,7 @@ struct cyzfs_inode* assemble_alloc_inode(struct cyzfs_dentry* dentry){
 	}
 	if(free_ino == -1){
 		printf("alloc_inode: no free inode!\n");
-		return NULL;//-ENOSPC;
+		return 0;//-ENOSPC;
 	}
 	/******** 分配新inode的in-memory物理空间 **************/
 	struct cyzfs_inode* new_inode = (struct cyzfs_inode*)malloc(sizeof(struct cyzfs_inode));
@@ -141,38 +144,47 @@ struct cyzfs_inode* assemble_read_inode(struct cyzfs_dentry* dentry){
 	struct cyzfs_inode_d inode_d;
     struct cyzfs_dentry* sub_dentry;
     struct cyzfs_dentry_d dentry_d;
+	int i;
 	//Q:为什么sfs每个inode占用一个Blk啊，好浪费，这里改了不同于sfs
 	assemble_read((super.inode_offset * FS_BLOCK_SIZE + dentry->ino * sizeof(struct cyzfs_inode_d)), 
 					(char*)&inode_d, 
-					sizeof(struct cyzfs_dentry));
+					sizeof(struct cyzfs_inode_d));/***sb error***/
 	inode->dir_cnt = inode_d.dir_cnt;
 	inode->ino = inode_d.ino;
 	inode->size = inode_d.size;
 	inode->ftype =inode_d.ftype;
 	inode->dentry_parent = dentry;
 	inode->dentry_children = NULL;
-	for(int i=0; i<6; i++){
+	dentry->inode = inode;
+	for(i=0; i<6; i++){
 		inode->data_pointer[i] = inode_d.data_pointer[i];
 		// malloc data pointer in memory
 		// Q:这里是每次把inode读入mem时，就把其对应的数据块都都装入内存，有待商榷
-		if(inode_d.data_pointer[i] >= 0){
+		if(inode_d.data_pointer[i] != -1){
 			inode->data_pointer_mem[i] = (char*)malloc(FS_BLOCK_SIZE);
-			assemble_read((super.data_offset + inode->data_pointer[i]) * FS_BLOCK_SIZE, inode->data_pointer_mem[i], FS_BLOCK_SIZE);
+			assemble_read((super.data_offset + inode->data_pointer[i]) * FS_BLOCK_SIZE, 
+							inode->data_pointer_mem[i], 
+							FS_BLOCK_SIZE);
 		}
 	}
-	if(inode->ftype == TYPE_DIR){
+	if(inode->dentry_parent->ftype == TYPE_DIR){
 		// DIR should init inode->dentry_children
 		// read in (data)dentry block
-		for(int i = 0; i < inode->dir_cnt; i++)
+		int dentry_per_datablock = FS_BLOCK_SIZE / sizeof(struct cyzfs_dentry_d);
+
+		for(i = 0; i < inode->dir_cnt; i++)
 		{
+			int j = i / dentry_per_datablock;		//i dentry 在第j个数据块中
+			int k = i % dentry_per_datablock;		//块内序号
 			// 将第i个目录项读到dentry_d中
-			assemble_read((super.data_offset+inode->ino)*FS_BLOCK_SIZE + i*sizeof(struct cyzfs_dentry_d),
-							(uint8_t *)&dentry_d,
+			assemble_read(((super.data_offset + inode->data_pointer[j]) * FS_BLOCK_SIZE + k * sizeof(struct cyzfs_dentry_d)),
+							(char *)&dentry_d,
 							sizeof(struct cyzfs_dentry_d));
 			// 建立对应的内存中的目录项，插入inode链表
 			sub_dentry = assemble_new_dentry(dentry_d.name, dentry_d.ftype);
 			sub_dentry->parent = dentry;
 			sub_dentry->brother = inode->dentry_children;
+			sub_dentry->ino = dentry_d.ino;
 			inode->dentry_children = sub_dentry;
 		}
 	}
@@ -181,7 +193,8 @@ struct cyzfs_inode* assemble_read_inode(struct cyzfs_dentry* dentry){
 	return inode;
 }
 
-int assemble_sync_inode(struct cyzfs_inode * inode){
+void assemble_sync_inode(struct cyzfs_inode * inode){
+	printf("---start sync inode %s--\n", inode->dentry_parent->name);
 	/************** 将inode对应内容递归的全部写回磁盘 ***************/
 	struct cyzfs_inode_d inode_d;
 	struct cyzfs_dentry* dentry;
@@ -202,33 +215,63 @@ int assemble_sync_inode(struct cyzfs_inode * inode){
 	
 
 	/************************* 写回inode对应的data***************************/
-	if(inode->ftype == TYPE_DIR){
+	if(inode->dentry_parent->ftype == TYPE_DIR){
 		dentry = inode->dentry_children;
-		int offset = (super.data_offset + dentry->ino) * FS_BLOCK_SIZE;
+		int dentry_per_datablock = FS_BLOCK_SIZE / sizeof(struct cyzfs_dentry_d);
+		int cnt = 0;
+		// int offset = (super.data_offset + dentry->ino) * FS_BLOCK_SIZE;
+		// int offset = (super.data_offset + inode->data_pointer[0]) * FS_BLOCK_SIZE;
+		// int offset = (super.data_offset + inode->ino) * FS_BLOCK_SIZE;
 		while(dentry != NULL)
 		{
-			memcpy(dentry_d.name, dentry->name, MAX_NAME_LEN);
+			int j = cnt / dentry_per_datablock;
+			int k = cnt % dentry_per_datablock;
+			int offset = (super.data_offset + inode->data_pointer[j]) * FS_BLOCK_SIZE + k * sizeof(struct cyzfs_dentry_d);
+			cnt++;
+			memset(dentry_d.name, 0, MAX_NAME_LEN);
+			memcpy(dentry_d.name, dentry->name, strlen(dentry->name));
 			dentry_d.ino = dentry->ino;
 			dentry_d.ftype = dentry->ftype;
-			assemble_write(offset, (uint8_t *)&dentry_d, sizeof(struct cyzfs_dentry_d));
+			// printf("sync inode %s\n",dentry->name);
+			assemble_write(offset, (char *)&dentry_d, sizeof(struct cyzfs_dentry_d));
 			if(dentry->inode != NULL){
 				assemble_sync_inode(dentry->inode);
 			}
 			dentry = dentry->brother;
-			offset += sizeof(struct cyzfs_dentry_d);
+			// offset += sizeof(struct cyzfs_dentry_d);
 		}
 	}
-	else if(inode->ftype == TYPE_FILE){
+	else if(inode->dentry_parent->ftype == TYPE_FILE){
 		//sfs这里怎么没有把6个字块全部写回？
-		for(int i = 0; i<6; i++){
-			if(inode->data_pointer[i] >= 0){
-				assemble_write((super.data_offset+inode->data_pointer[i])*FS_BLOCK_SIZE,
-								inode->data_pointer_mem[i], FS_BLOCK_SIZE);
+		// for(int i = 0; i<6; i++){
+		// 	if(inode->data_pointer[i] != -1){
+		// 		assemble_write((super.data_offset + inode->data_pointer[i])*FS_BLOCK_SIZE, inode->data_pointer_mem[i], FS_BLOCK_SIZE);
+		// 	}
+		// }
+		/****** umount执行到这会爆炸，已修改 *******/
+		// if(inode->data_pointer[0] != -1){
+		// 	assemble_write((super.data_offset + inode->data_pointer[0])*FS_BLOCK_SIZE, inode->data_pointer_mem[0], FS_BLOCK_SIZE);
+		// }
+		for(int i=0;i<6;i++){
+			int flag = 0;
+			for(int j=0;j<i;j++){
+				if(inode->data_pointer[i]==inode->data_pointer[j]){
+					flag = 1;
+					break;
+				}
+			}
+			if(flag == 0){
+				if(inode->data_pointer[i] != -1){
+					assemble_write((super.data_offset + inode->data_pointer[i])*FS_BLOCK_SIZE, inode->data_pointer_mem[i], FS_BLOCK_SIZE);
+				}
 			}
 		}
 	}
-	return 0;
+	printf("end sync inode\n");
+	// return 0;
 }
+
+
 
 char* assemble_get_fname(const char* path) {
 	/*******获取文件名***********/
@@ -239,12 +282,12 @@ char* assemble_get_fname(const char* path) {
 
 int assemble_calc_lvl(const char * path) {
     /*******计算路径的层级************/
-    char* str = path;
+    char* str = (char *)path;
     int   lvl = 0;
     if (strcmp(path, "/") == 0) {
         return lvl;
     }
-    while (*str != NULL) {
+    while (*str != '\0') {
         if (*str == '/') {
             lvl++;
         }
@@ -254,6 +297,7 @@ int assemble_calc_lvl(const char * path) {
 }
 
 struct cyzfs_dentry* assemble_find_dentry_of_path(const char * path, int* is_find, int* is_root){
+	/****** sfs_lookup() *******/
 	struct cyzfs_dentry* dentry_cursor = super.root_dentry;
     struct cyzfs_dentry* dentry_ret = NULL;
     struct cyzfs_inode*  inode; 
@@ -261,7 +305,7 @@ struct cyzfs_dentry* assemble_find_dentry_of_path(const char * path, int* is_fin
     int lvl = 0;
     int is_hit;
     char* fname = NULL;
-    char* path_cpy = (char*)malloc(sizeof(path));
+    char* path_cpy = (char*)malloc(strlen(path));
     *is_root = FALSE;
     strcpy(path_cpy, path);
 
@@ -280,17 +324,18 @@ struct cyzfs_dentry* assemble_find_dentry_of_path(const char * path, int* is_fin
 
         inode = dentry_cursor->inode;
 
-        if (inode->ftype == TYPE_FILE && lvl < total_lvl) {
+        if (inode->dentry_parent->ftype == TYPE_FILE && lvl < total_lvl) {
             dentry_ret = inode->dentry_parent;
             break;
         }
-        if (inode->ftype == TYPE_DIR) {
+        if (inode->dentry_parent->ftype == TYPE_DIR) {
             dentry_cursor = inode->dentry_children;
             is_hit        = FALSE;
 
             while (dentry_cursor)
             {
-                if (memcmp(dentry_cursor->name, fname, strlen(fname)) == 0) {
+                if (memcmp(dentry_cursor->name, fname, strlen(fname)) == 0) {// have bug  but sfs does so
+				// if (memcmp(dentry_cursor->name, fname, MAX_NAME_LEN) == 0){
                     is_hit = TRUE;
                     break;
                 }
@@ -360,6 +405,9 @@ int assemble_alloc_insert_dentry2inode(struct cyzfs_inode* inode, struct cyzfs_d
 		inode->data_pointer_mem[blkno_in_dir] = (char *) assemble_alloc_datablk(&datablk_no);
 		inode->data_pointer[blkno_in_dir] = datablk_no;
 	}
+	// int datablk_no = -1;
+	// inode->data_pointer_mem[0] = (char *) assemble_alloc_datablk(&datablk_no);
+	// inode->data_pointer[0] = datablk_no;
 	/****** 将dentry插入inode *******/
 	dentry->brother = inode->dentry_children;
 	inode->dentry_children = dentry;
@@ -401,10 +449,7 @@ void* cyzfs_init(struct fuse_conn_info * conn_info) {
 
 	super.is_mounted = FALSE;
 	
-	super.fd = ddriver_open(cyzfs_options.device);
-	if(super.fd < 0){
-		return super.fd;
-	}
+	super.fd = ddriver_open((char*)cyzfs_options.device);
 	
 	/********************** 读入超级块 ********************/
 	assemble_read(0, (char*)(&super_d), sizeof(struct cyzfs_super_d));
@@ -437,16 +482,18 @@ void* cyzfs_init(struct fuse_conn_info * conn_info) {
 						- super.bitmap_inode_blks - super.bitmap_data_blks - super.inode_blks;
 	super.data_offset = super.inode_offset + super.inode_blks;
 
-	super.bitmap_inode_ptr = (uint8_t*) malloc(super.bitmap_inode_blks * FS_BLOCK_SIZE);
+	super.bitmap_inode_ptr = (char*) malloc(super.bitmap_inode_blks * FS_BLOCK_SIZE);
 	assemble_read((super.bitmap_inode_offset * FS_BLOCK_SIZE), super.bitmap_inode_ptr, (super.bitmap_inode_blks * FS_BLOCK_SIZE));
-	super.bitmap_data_ptr = (uint8_t*) malloc(super.bitmap_data_blks * FS_BLOCK_SIZE);
+	super.bitmap_data_ptr = (char*) malloc(super.bitmap_data_blks * FS_BLOCK_SIZE);
 	assemble_read((super.bitmap_data_offset * FS_BLOCK_SIZE), super.bitmap_data_ptr, (super.bitmap_data_blks * FS_BLOCK_SIZE));
 	
 	super.root_dentry = assemble_new_dentry("/", TYPE_DIR);
+	super.root_dentry->ino = ROOT_INODE_NUM;	//根目录的inode号固定
 	//Q:sfs对根目录的inode好像没处理
 	if(is_init){
 		//分配根目录的inode
-		super.root_dentry->ino = ROOT_INODE_NUM;	//根目录的inode号固定
+		
+		// super.root_dentry->ftype = TYPE_DIR;
 		root_inode = assemble_alloc_inode(super.root_dentry);
 		// assemble_sync_inode(root_inode);
 		/************** 这里sfs把inode同步回了磁盘，后续在umount的时候一块同步回磁盘？ *****************/
@@ -470,9 +517,7 @@ void* cyzfs_init(struct fuse_conn_info * conn_info) {
 void cyzfs_destroy(void* p) {
 	struct cyzfs_super_d super_d;
 
-	if(!super.is_mounted){
-		return 0;
-	}
+	super.is_mounted = FALSE;
 
 /********************* 写inode和数据 ******************************/
 	assemble_sync_inode(super.root_dentry->inode);
@@ -547,18 +592,18 @@ int cyzfs_mkdir(const char* path, mode_t mode) {
  */
 int cyzfs_getattr(const char* path, struct stat * cyzfs_stat) {
 	/*  解析路径，获取Inode，填充cyzfs_stat，可参考/fs/simplefs/sfs.c的sfs_getattr()函数实现 */
-	int	is_find, is_root;
+	int	is_find=FALSE, is_root=FALSE;
 	struct cyzfs_dentry* dentry = assemble_find_dentry_of_path(path, &is_find, &is_root);
 	if (is_find == FALSE) {
 		/****** not found ******/
 		return -ENOENT;
 	}
 
-	if (dentry->inode->ftype == TYPE_DIR) {
+	if (dentry->ftype == TYPE_DIR) {
 		cyzfs_stat->st_mode = S_IFDIR | CYZFS_DEFAULT_PERM;
 		cyzfs_stat->st_size = dentry->inode->dir_cnt * sizeof(struct cyzfs_dentry_d);
 	}
-	else if (dentry->inode->ftype == TYPE_FILE) {
+	else if (dentry->ftype == TYPE_FILE) {
 		cyzfs_stat->st_mode = S_IFREG | CYZFS_DEFAULT_PERM;
 		cyzfs_stat->st_size = dentry->inode->size;
 	}
@@ -802,7 +847,7 @@ int main(int argc, char **argv)
     int ret;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	cyzfs_options.device = strdup("TODO: 这里填写你的ddriver设备路径");
+	cyzfs_options.device = strdup("/home/cyz/ddriver");
 
 	if (fuse_opt_parse(&args, &cyzfs_options, option_spec, NULL) == -1)
 		return -1;

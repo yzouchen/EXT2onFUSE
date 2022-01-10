@@ -13,19 +13,19 @@
 #include "errno.h"
 #include "types.h"
 
-#define CYZFS_MAGIC       23332333   /* TODO: Define by yourself */
+#define CYZFS_MAGIC       87654233   /* TODO: Define by yourself */
 #define CYZFS_DEFAULT_PERM    0777   /* 全权限打开 */
 
 /******************************************************************************
 * SECTION: cyzfs.c
 *******************************************************************************/
 
-int assemble_read(int, uint8_t *, int);
-int assemble_write(int offset, uint8_t *buf, int size);
+int assemble_read(int, char *, int);
+int assemble_write(int offset, char *buf, int size);
 struct cyzfs_dentry* assemble_new_dentry(char *, CYZFS_FILE_TYPE);
 struct cyzfs_inode* assemble_alloc_inode(struct cyzfs_dentry* );
 struct cyzfs_inode* assemble_read_inode(struct cyzfs_dentry* );
-int assemble_sync_inode(struct cyzfs_inode * );
+void assemble_sync_inode(struct cyzfs_inode * );
 char* assemble_get_fname(const char* ) ;
 int assemble_calc_lvl(const char * );
 struct cyzfs_dentry* assemble_find_dentry_of_path(const char * , int* , int* );

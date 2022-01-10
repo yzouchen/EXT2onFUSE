@@ -103,7 +103,7 @@ function test_cp() {
 function test_remount() {
     TEST_CASE=$1
     echo ">>>>>>>>>>>>>>>>>>>> TEST_REMOUNT"
-    
+
     fusermount -u ${MNTPOINT}
     if [ $? -ne 0 ]; then
         fail "umount"

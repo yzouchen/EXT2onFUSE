@@ -21,8 +21,8 @@ typedef enum cyzfs_file_type {
 #define IO_SIZE                 512
 #define MAX_NAME_LEN            128     
 #define ROOT_INODE_NUM          0               // 根据指导书，EXT2文件系统根目录的索引号为2
-#define BLK_ROUND_DOWN(value, round)    ((value / round) * round)
-#define BLK_ROUND_UP(value, round)      ((value / round + 1) * round)
+#define BLK_ROUND_DOWN(value, round)    (value % round == 0 ? value : (value / round) * round)
+#define BLK_ROUND_UP(value, round)      (value % round == 0 ? value : (value / round + 1) * round)
 
 
 //PS: 偏移指偏移块数
@@ -51,7 +51,7 @@ struct cyzfs_inode_d {
 
 struct cyzfs_dentry_d {
     char     name[MAX_NAME_LEN];
-    uint32_t ino;
+    int ino;
     CYZFS_FILE_TYPE ftype;
     int valid;
 };
@@ -67,8 +67,8 @@ struct cyzfs_super {
     int                 fd;
     int                 sz_usage;
 
-    uint8_t*            bitmap_inode_ptr;               // inode位图in memory
-    uint8_t*            bitmap_data_ptr;                // data位图in memory
+    char*            bitmap_inode_ptr;               // inode位图in memory
+    char*            bitmap_data_ptr;                // data位图in memory
     struct cyzfs_dentry*     root_dentry;           // 根目录dentry
     int                 is_mounted;
 
@@ -86,7 +86,7 @@ struct cyzfs_super {
 
 
 struct cyzfs_inode {
-    uint32_t            ino;                  // 在inode位图中的下标
+    int            ino;                  // 在inode位图中的下标
     int                 size;                 // 文件已占用空间
     CYZFS_FILE_TYPE     ftype;
     int                 dir_cnt;              // 目录项数量
@@ -100,11 +100,11 @@ struct cyzfs_inode {
 
 struct cyzfs_dentry {
     char     name[MAX_NAME_LEN];
-    uint32_t ino;                                     /* 在inode位图中的下标 */
+    int ino;                                     /* 在inode位图中的下标 */
     struct cyzfs_dentry* parent;                        /* 父亲Inode的dentry */
     struct cyzfs_dentry* brother;                       /* 兄弟 */
     struct cyzfs_inode*  inode;                         /* 指向inode */
     CYZFS_FILE_TYPE    ftype;     
 };
-
+// int a = sizeof(struct cyzfs_dentry_d);
 #endif /* _TYPES_H_ */
